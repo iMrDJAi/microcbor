@@ -13,11 +13,16 @@ export class Encoder {
 	public readonly chunkSize: number
 	public readonly minFloatSize: (typeof FloatSize)[keyof typeof FloatSize]
 
+	private readonly onKey?: (key: string) => string|void
+	private readonly onValue?: (value: unknown, keyPath: (string|number)[]) => CBORValue|void
 	private readonly encoder = new TextEncoder()
 	private readonly buffer: ArrayBuffer
 	private readonly view: DataView
 	private readonly array: Uint8Array
 	private offset: number
+	#env: {
+		keyPath: (string|number)[]
+	}
 
 	constructor(options: EncodeOptions = {}) {
 		this.allowUndefined = options.allowUndefined ?? true
@@ -25,16 +30,27 @@ export class Encoder {
 		this.chunkRecycling = options.chunkRecycling ?? false
 		this.chunkSize = options.chunkSize ?? Encoder.defaultChunkSize
 		assert(this.chunkSize >= 8, "expected chunkSize >= 8")
+		this.onKey = options.onKey
+		this.onValue = options.onValue
 
 		this.buffer = new ArrayBuffer(this.chunkSize)
 		this.view = new DataView(this.buffer)
 		this.array = new Uint8Array(this.buffer, 0, this.chunkSize)
 		this.offset = 0
 		this.#closed = false
+		this.#env = { keyPath: [] }
 	}
 
 	public get closed() {
 		return this.#closed
+	}
+
+	private pushKey(key: string|number) {
+		this.#env.keyPath.push(key)
+	}
+
+	private popKey() {
+		this.#env.keyPath.pop()
 	}
 
 	#flush(): Uint8Array {
@@ -214,19 +230,28 @@ export class Encoder {
 			yield* this.encodeBytes(value)
 		} else if (Array.isArray(value)) {
 			yield* this.encodeTypeAndArgument(4, value.length)
-			for (const element of value) {
-				yield* this.encodeValue(element)
+			for (let i = 0; i < value.length; i++) {
+				this.pushKey(i)
+				const val = this.onValue?.(value[i], this.#env.keyPath)
+				yield* this.encodeValue(val === undefined ? value[i] : val)
+				this.popKey()
 			}
 		} else {
 			const entries = Object.entries(value)
-				.map<[Uint8Array, CBORValue]>(([key, value]) => [this.encoder.encode(key), value])
+				.map<[Uint8Array, CBORValue, string]>(([ogKey, value]) => {
+					let key = this.onKey?.(ogKey)
+					return [this.encoder.encode(key === undefined ? ogKey : key + ''), value, ogKey]
+				})
 				.sort(Encoder.compareEntries)
 
 			yield* this.encodeTypeAndArgument(5, entries.length)
-			for (const [key, value] of entries) {
+			for (const [key, value, ogKey] of entries) {
 				yield* this.encodeTypeAndArgument(3, key.byteLength)
 				yield* this.writeBytes(key)
-				yield* this.encodeValue(value)
+				this.pushKey(ogKey)
+				const val = this.onValue?.(value, this.#env.keyPath)
+				yield* this.encodeValue(val === undefined ? value : val)
+				this.popKey()
 			}
 		}
 	}
@@ -249,7 +274,10 @@ export class Encoder {
 	// with a longer length, since strings are encoded with a length
 	// prefix (either in the additionalInformation bits, if < 24, or
 	// in the next serveral bytes, but in all cases the order holds).
-	private static compareEntries([a]: [key: Uint8Array, value: CBORValue], [b]: [key: Uint8Array, value: CBORValue]) {
+	private static compareEntries(
+		[a]: [key: Uint8Array, value: CBORValue, ogKey: string],
+		[b]: [key: Uint8Array, value: CBORValue, ogKey: string]
+	) {
 		if (a.byteLength < b.byteLength) return -1
 		if (b.byteLength < a.byteLength) return 1
 

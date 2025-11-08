@@ -1,10 +1,9 @@
-import { Decoder } from "./decodeAsyncIterable.js"
-import { DecodeOptions } from "./options.js"
+import { Decoder, type AsyncDecodeOptions } from "./decodeAsyncIterable.js"
 import { CBORValue } from "./types.js"
 
 /** Decode a Web Streams API ReadableStream */
 export class CBORDecoderStream<T extends CBORValue = CBORValue> extends TransformStream<Uint8Array, T> {
-	constructor(options: DecodeOptions = {}) {
+	constructor(options: AsyncDecodeOptions = {}) {
 		let readableController: ReadableStreamDefaultController<Uint8Array>
 
 		const readable = new ReadableStream<Uint8Array>({
