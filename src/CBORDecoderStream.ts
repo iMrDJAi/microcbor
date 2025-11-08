@@ -5,6 +5,7 @@ import { CBORValue } from "./types.js"
 export class CBORDecoderStream<T extends CBORValue = CBORValue> extends TransformStream<Uint8Array, T> {
 	constructor(options: AsyncDecodeOptions = {}) {
 		let readableController: ReadableStreamDefaultController<Uint8Array>
+		let pipePromise: Promise<void>
 
 		const readable = new ReadableStream<Uint8Array>({
 			start(controller) {
@@ -29,7 +30,7 @@ export class CBORDecoderStream<T extends CBORValue = CBORValue> extends Transfor
 
 		super({
 			start(controller) {
-				pipe(controller).catch((err) => controller.error(err))
+				pipePromise = pipe(controller).catch((err) => controller.error(err))
 			},
 
 			transform(chunk) {
@@ -39,8 +40,10 @@ export class CBORDecoderStream<T extends CBORValue = CBORValue> extends Transfor
 				})
 			},
 
-			flush() {
+			async flush() {
 				readableController.close()
+				// Wait for pipe to complete before finishing flush
+				await pipePromise
 			},
 		})
 	}
