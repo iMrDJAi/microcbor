@@ -1,13 +1,11 @@
 import { getFloat16 } from "fp16"
 
 import type { CBORValue, CBORArray, CBORMap } from "./types.js"
-
+import type { DecodeOptions, FloatSize } from "./options.js"
+import type { WithRequired, Flatten, NoInfer, Awaitable } from "./utils.js"
 import { UnsafeIntegerError, maxSafeInteger, minSafeInteger } from "./utils.js"
-import { DecodeOptions, FloatSize } from "./options.js"
 
-type Awaitable<T> = T | PromiseLike<T>
-
-export interface AsyncDecodeOptions extends Omit<DecodeOptions, 'onKey'|'onValue'> {
+export interface AsyncDecodeOptions<T = CBORValue> extends Omit<DecodeOptions, "onKey"|"onValue"> {
 	/**
 	 * Function to remap/validate object keys while decoding
 	 * (async version that works with AsyncIterable and streams)
@@ -19,7 +17,7 @@ export interface AsyncDecodeOptions extends Omit<DecodeOptions, 'onKey'|'onValue
 	onKey?: (
 		decodeKey: () => Awaitable<string>,
 		length: number
-	) => Promise<string|void>
+	) => Awaitable<string|void>
 
 	/**
 	 * Function to validate/transform/replace values while decoding
@@ -36,12 +34,12 @@ export interface AsyncDecodeOptions extends Omit<DecodeOptions, 'onKey'|'onValue
 		length: number,
 		type: string,
 		keyPath: (string|number)[]
-	) => Promise<CBORValue|void>
+	) => Awaitable<T|void>
 
 	onFree?: (chunk: Uint8Array) => void
 }
 
-export class Decoder<T extends CBORValue = CBORValue> implements AsyncIterableIterator<T> {
+export class Decoder<T = CBORValue> implements AsyncIterableIterator<T> {
 	public readonly allowUndefined: boolean
 	public readonly minFloatSize: (typeof FloatSize)[keyof typeof FloatSize]
 
@@ -56,25 +54,28 @@ export class Decoder<T extends CBORValue = CBORValue> implements AsyncIterableIt
 	private readonly onKey?: (
 		decodeKey: () => Awaitable<string>,
 		length: number
-	) => Promise<string|void>
+	) => Awaitable<string|void>
 	private readonly onValue?: (
 		decodeValue: () => Awaitable<CBORValue>,
 		length: number,
 		type: string,
 		keyPath: (string|number)[]
-	) => Promise<CBORValue|void>
+	) => Awaitable<CBORValue|void>
 	private env: {
 		isKey: boolean
 		keyPath: (string|number)[]
 	} = { isKey: false, keyPath: [] }
 
-	public constructor(source: AsyncIterable<Uint8Array>, options: AsyncDecodeOptions = {}) {
+	public constructor(...[source, options = {}]: T extends CBORValue
+		? ([AsyncIterable<Uint8Array>]|[AsyncIterable<Uint8Array>, AsyncDecodeOptions])
+		: [AsyncIterable<Uint8Array>, WithRequired<AsyncDecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+	) {
 		this.onFree = options.onFree
 		this.allowUndefined = options.allowUndefined ?? true
 		this.minFloatSize = options.minFloatSize ?? 16
 		this.iter = source[Symbol.asyncIterator]()
 		this.onKey = options.onKey
-		this.onValue = options.onValue
+		this.onValue = (options as AsyncDecodeOptions).onValue
 	}
 
 	[Symbol.asyncIterator] = () => this
@@ -403,10 +404,14 @@ export class Decoder<T extends CBORValue = CBORValue> implements AsyncIterableIt
 	}
 }
 
-/** Decode an async iterable of Uint8Array chunks into an async iterable of CBOR values */
-export async function* decodeAsyncIterable(
-	source: AsyncIterable<Uint8Array>,
-	options: AsyncDecodeOptions = {},
-): AsyncIterableIterator<CBORValue> {
-	yield* new Decoder(source, options)
+/**
+ * Decode an async iterable of Uint8Array chunks into an async iterable of CBOR values
+ * @param source Async iterable of Uint8Array chunks
+ * @param options Decode options
+ */
+export async function* decodeAsyncIterable<T = CBORValue>(...args: T extends CBORValue
+	? ([AsyncIterable<Uint8Array>]|[AsyncIterable<Uint8Array>, AsyncDecodeOptions])
+	: [AsyncIterable<Uint8Array>, WithRequired<AsyncDecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+): AsyncIterableIterator<T> {
+	yield* new Decoder<T>(...args)
 }

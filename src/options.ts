@@ -6,7 +6,7 @@ export const FloatSize = {
 	f64: 64,
 }
 
-export interface EncodeOptions {
+export interface EncodeOptions<T = CBORValue> {
 	/**
 	 * Allow `undefined`
 	 * @default true
@@ -50,10 +50,10 @@ export interface EncodeOptions {
 	 * @throws Error if value is invalid
 	 * @returns An optional replacement value to use
 	 */
-	onValue?: (value: unknown, keyPath: (string|number)[]) => CBORValue|void
+	onValue?: (value: T, keyPath: (string|number)[]) => CBORValue|void
 }
 
-export interface DecodeOptions {
+export interface DecodeOptions<T = CBORValue> {
 	/**
 	 * Allow `undefined`
 	 * @default true
@@ -89,5 +89,5 @@ export interface DecodeOptions {
 		length: number,
 		type: string,
 		keyPath: (string|number)[]
-	) => CBORValue|void
+	) => T|void
 }

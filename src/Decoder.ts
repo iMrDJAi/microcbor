@@ -2,9 +2,10 @@ import { getFloat16 } from "fp16"
 
 import type { CBORValue, CBORArray, CBORMap } from "./types.js"
 import type { DecodeOptions, FloatSize } from "./options.js"
+import type { WithRequired, Flatten, NoInfer } from "./utils.js"
 import { UnsafeIntegerError, maxSafeInteger, minSafeInteger } from "./utils.js"
 
-export class Decoder {
+export class Decoder<T = CBORValue> {
 	public readonly allowUndefined: boolean
 	public readonly minFloatSize: (typeof FloatSize)[keyof typeof FloatSize]
 
@@ -17,6 +18,7 @@ export class Decoder {
 		keyPath: (string|number)[]
 	) => CBORValue|void
 
+	private data: Uint8Array
 	#offset: number
 	#view: DataView
 	#env: {
@@ -24,17 +26,18 @@ export class Decoder {
 		keyPath: (string|number)[]
 	}
 
-	public constructor(
-		private readonly data: Uint8Array,
-		options: DecodeOptions = {},
+	public constructor(...[data, options = {}]: T extends CBORValue
+		? ([Uint8Array]|[Uint8Array, DecodeOptions])
+		: [Uint8Array, WithRequired<DecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
 	) {
+		this.data = data
 		this.#offset = 0
 		this.#view = new DataView(data.buffer, data.byteOffset, data.byteLength)
 		this.#env = { isKey: false, keyPath: [] }
 		this.allowUndefined = options.allowUndefined ?? true
 		this.minFloatSize = options.minFloatSize ?? 16
 		this.onKey = options.onKey
-		this.onValue = options.onValue
+		this.onValue = (options as DecodeOptions).onValue
 	}
 
 	public getOffset(): number {
@@ -102,6 +105,7 @@ export class Decoder {
 		}
 	}
 
+	public decodeValue<R = T>(): R
 	public decodeValue(): CBORValue {
 		const initialByte = this.uint8()
 		const majorType = initialByte >> 5
@@ -287,7 +291,14 @@ export class Decoder {
   }
 }
 
-/** Decode a single CBOR value */
-export function decode<T extends CBORValue = CBORValue>(data: Uint8Array, options: DecodeOptions = {}): T {
-	return new Decoder(data, options).decodeValue() as T
+/**
+ * Decode a single CBOR value
+ * @param data Data to decode
+ * @param options Decode options
+ */
+export function decode<T = CBORValue>(...[data, options]: T extends CBORValue
+	? ([Uint8Array]|[Uint8Array, DecodeOptions])
+	: [Uint8Array, WithRequired<DecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+) {
+	return new Decoder(data, options as DecodeOptions).decodeValue() as T
 }

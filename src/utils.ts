@@ -90,3 +90,21 @@ export function getByteLength(string: string): number {
 
 	return bytes
 }
+
+export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
+
+export type DeepValueUnion<T> =
+  T extends readonly (infer E)[]
+		? DeepValueUnion<E>
+		: T extends Record<string, unknown>
+			? { [K in keyof T]: DeepValueUnion<T[K]> }[keyof T]
+			: T
+
+export type Flatten<T> =
+	| DeepValueUnion<T>
+	| Flatten<T>[]
+	| { [K: string]: Flatten<T> }
+
+export type NoInfer<T> = [T][T extends any ? 0 : never]
+
+export type Awaitable<T> = T | PromiseLike<T>

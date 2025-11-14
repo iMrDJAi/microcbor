@@ -1,9 +1,13 @@
 import { Decoder, type AsyncDecodeOptions } from "./decodeAsyncIterable.js"
-import { CBORValue } from "./types.js"
+import type { WithRequired, Flatten, NoInfer } from "./utils.js"
+import type { CBORValue } from "./types.js"
 
 /** Decode a Web Streams API ReadableStream */
-export class CBORDecoderStream<T extends CBORValue = CBORValue> extends TransformStream<Uint8Array, T> {
-	constructor(options: AsyncDecodeOptions = {}) {
+export class CBORDecoderStream<T = CBORValue> extends TransformStream<Uint8Array, T> {
+	constructor(...[options = {}]: T extends CBORValue
+		? []|[AsyncDecodeOptions]
+		: [WithRequired<AsyncDecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+	) {
 		let readableController: ReadableStreamDefaultController<Uint8Array>
 		let pipePromise: Promise<void>
 
@@ -18,13 +22,13 @@ export class CBORDecoderStream<T extends CBORValue = CBORValue> extends Transfor
 		const chunks = new WeakMap<Uint8Array, { resolve: () => void }>()
 
 		async function pipe(controller: TransformStreamDefaultController<T>) {
-			const decoder = new Decoder<T>(readable.values(), {
+			const decoder = new Decoder(readable.values(), {
 				...options,
 				onFree: (chunk) => chunks.get(chunk)?.resolve(),
-			})
+			} as AsyncDecodeOptions)
 
 			for await (const value of decoder) {
-				controller.enqueue(value)
+				controller.enqueue(value as T)
 			}
 		}
 

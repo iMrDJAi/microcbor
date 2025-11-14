@@ -1,10 +1,10 @@
 import { Precision, getFloat16Precision, getFloat32Precision, setFloat16 } from "fp16"
 
 import type { CBORValue } from "./types.js"
-import { EncodeOptions, FloatSize } from "./options.js"
-import { assert } from "./utils.js"
+import { FloatSize, type EncodeOptions } from "./options.js"
+import { assert, type WithRequired, type Flatten, type NoInfer } from "./utils.js"
 
-export class Encoder {
+export class Encoder<T = CBORValue> {
 	public static defaultChunkSize = 4096
 
 	#closed: boolean
@@ -14,7 +14,7 @@ export class Encoder {
 	public readonly minFloatSize: (typeof FloatSize)[keyof typeof FloatSize]
 
 	private readonly onKey?: (key: string) => string|void
-	private readonly onValue?: (value: unknown, keyPath: (string|number)[]) => CBORValue|void
+	private readonly onValue?: (value: CBORValue, keyPath: (string|number)[]) => CBORValue|void
 	private readonly encoder = new TextEncoder()
 	private readonly buffer: ArrayBuffer
 	private readonly view: DataView
@@ -24,14 +24,17 @@ export class Encoder {
 		keyPath: (string|number)[]
 	}
 
-	constructor(options: EncodeOptions = {}) {
+	constructor(...[options = {}]: T extends CBORValue
+		? []|[EncodeOptions]
+		: [WithRequired<EncodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+	) {
 		this.allowUndefined = options.allowUndefined ?? true
 		this.minFloatSize = options.minFloatSize ?? 16
 		this.chunkRecycling = options.chunkRecycling ?? false
 		this.chunkSize = options.chunkSize ?? Encoder.defaultChunkSize
 		assert(this.chunkSize >= 8, "expected chunkSize >= 8")
 		this.onKey = options.onKey
-		this.onValue = options.onValue
+		this.onValue = (options as EncodeOptions).onValue
 
 		this.buffer = new ArrayBuffer(this.chunkSize)
 		this.view = new DataView(this.buffer)
@@ -205,13 +208,13 @@ export class Encoder {
 		}
 	}
 
-	public *encodeValue(value: CBORValue): Iterable<Uint8Array> {
+	public *encodeValue(value: T|CBORValue): Iterable<Uint8Array> {
 		if (this.#closed) {
 			return
 		}
 
 		if (this.onValue) {
-			const val = this.onValue(value, this.#env.keyPath)
+			const val = this.onValue(value as CBORValue, this.#env.keyPath)
 			if (val !== undefined) value = val
 		}
 
@@ -309,8 +312,12 @@ export class Encoder {
 
 /**
  * Encode a single CBOR value.
+ * @param value Value to encode
+ * @param options Encode options
  * options.chunkRecycling has no effect here.
  */
+export function encode<T extends CBORValue>(value: T, options?: EncodeOptions): Uint8Array
+export function encode<T>(value: T, options: WithRequired<EncodeOptions<Flatten<NoInfer<T>>>, "onValue">): Uint8Array
 export function encode(value: CBORValue, options: EncodeOptions = {}): Uint8Array {
 	const encoder = new Encoder({ ...options, chunkRecycling: false })
 

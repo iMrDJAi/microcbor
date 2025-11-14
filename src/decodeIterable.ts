@@ -2,9 +2,10 @@ import { getFloat16 } from "fp16"
 
 import type { CBORValue, CBORArray, CBORMap } from "./types.js"
 import type { DecodeOptions, FloatSize } from "./options.js"
+import type { WithRequired, Flatten, NoInfer } from "./utils.js"
 import { UnsafeIntegerError, maxSafeInteger, minSafeInteger } from "./utils.js"
 
-export class Decoder<T extends CBORValue = CBORValue> implements IterableIterator<T> {
+export class Decoder<T = CBORValue> implements IterableIterator<T> {
 	public readonly allowUndefined: boolean
 	public readonly minFloatSize: (typeof FloatSize)[keyof typeof FloatSize]
 
@@ -27,12 +28,15 @@ export class Decoder<T extends CBORValue = CBORValue> implements IterableIterato
 		keyPath: (string|number)[]
 	} = { isKey: false, keyPath: [] }
 
-	public constructor(source: Iterable<Uint8Array>, options: DecodeOptions = {}) {
+	public constructor(...[source, options = {}]: T extends CBORValue
+		? ([Iterable<Uint8Array>]|[Iterable<Uint8Array>, DecodeOptions])
+		: [Iterable<Uint8Array>, WithRequired<DecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+	) {
 		this.allowUndefined = options.allowUndefined ?? true
 		this.minFloatSize = options.minFloatSize ?? 16
 		this.iter = source[Symbol.iterator]()
 		this.onKey = options.onKey
-		this.onValue = options.onValue
+		this.onValue = (options as DecodeOptions).onValue
 	}
 
 	[Symbol.iterator] = () => this
@@ -355,10 +359,14 @@ export class Decoder<T extends CBORValue = CBORValue> implements IterableIterato
 	}
 }
 
-/** Decode an iterable of Uint8Array chunks into an iterable of CBOR values */
-export function* decodeIterable(
-	source: Iterable<Uint8Array>,
-	options?: DecodeOptions
-): IterableIterator<CBORValue> {
-	yield* new Decoder(source, options)
+/**
+ * Decode an iterable of Uint8Array chunks into an iterable of CBOR values
+ * @param source Iterable of Uint8Array chunks
+ * @param options Decode options
+ */
+export function* decodeIterable<T = CBORValue>(...args: T extends CBORValue
+	? ([Iterable<Uint8Array>]|[Iterable<Uint8Array>, DecodeOptions])
+	: [Iterable<Uint8Array>, WithRequired<DecodeOptions<Flatten<NoInfer<T>>>, "onValue">]
+): IterableIterator<T> {
+	yield* new Decoder<T>(...args)
 }
