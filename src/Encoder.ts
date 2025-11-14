@@ -210,6 +210,11 @@ export class Encoder {
 			return
 		}
 
+		if (this.onValue) {
+			const val = this.onValue(value, this.#env.keyPath)
+			if (val !== undefined) value = val
+		}
+
 		if (value === false) {
 			yield* this.uint8(0xf4)
 		} else if (value === true) {
@@ -232,15 +237,14 @@ export class Encoder {
 			yield* this.encodeTypeAndArgument(4, value.length)
 			for (let i = 0; i < value.length; i++) {
 				this.pushKey(i)
-				const val = this.onValue?.(value[i], this.#env.keyPath)
-				yield* this.encodeValue(val === undefined ? value[i] : val)
+				yield* this.encodeValue(value[i])
 				this.popKey()
 			}
 		} else {
 			const entries = Object.entries(value)
 				.map<[Uint8Array, CBORValue, string]>(([ogKey, value]) => {
 					let key = this.onKey?.(ogKey)
-					return [this.encoder.encode(key === undefined ? ogKey : key + ''), value, ogKey]
+					return [this.encoder.encode(key === undefined ? ogKey : key + ""), value, ogKey]
 				})
 				.sort(Encoder.compareEntries)
 
@@ -249,8 +253,7 @@ export class Encoder {
 				yield* this.encodeTypeAndArgument(3, key.byteLength)
 				yield* this.writeBytes(key)
 				this.pushKey(ogKey)
-				const val = this.onValue?.(value, this.#env.keyPath)
-				yield* this.encodeValue(val === undefined ? value : val)
+				yield* this.encodeValue(value)
 				this.popKey()
 			}
 		}
