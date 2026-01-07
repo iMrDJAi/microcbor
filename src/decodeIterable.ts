@@ -248,6 +248,9 @@ export class Decoder<T = CBORValue> implements IterableIterator<T> {
 					if (typeof key !== "string") {
 						throw new Error("microcbor only supports string keys in objects")
 					}
+					if (key in value) {
+						throw new Error("duplicate object key")
+					}
 					this.pushKey(key)
 					value[key] = this.decodeValue()
 					this.popKey()
