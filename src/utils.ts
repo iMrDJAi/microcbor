@@ -91,10 +91,62 @@ export function getByteLength(string: string): number {
 	return bytes
 }
 
+export function createTransformWithBackpressure<I, O>(
+	transform: (chunk: I, enqueue: (out: O) => Promise<void>) => Awaitable<void>,
+	flush?: (enqueue: (out: O) => Promise<void>) => Awaitable<void>
+): ReadableWritablePair<O, I> {
+	let readableController: ReadableStreamDefaultController<O>
+	let pullResolve: (() => void) | null = null
+	let closed = false
+
+	const enqueue = async (out: O) => {
+		if (closed) throw new Error('Stream closed: cannot enqueue')
+		readableController.enqueue(out)
+		await new Promise<void>(res => {
+			pullResolve = () => {
+				pullResolve = null
+				res()
+			}
+		})
+	}
+
+	const readable = new ReadableStream<O>({
+		start(controller) {
+			readableController = controller
+		},
+		pull() {
+			pullResolve?.()
+		},
+		cancel() {
+			closed = true
+			pullResolve?.()
+		}
+	}, { highWaterMark: 1 })
+
+	const writable = new WritableStream<I>({
+		write(chunk) {
+			return transform(chunk, enqueue)
+		},
+		async close() {
+			pullResolve?.()
+			if (flush) await flush(enqueue)
+			closed = true
+			readableController.close()
+		},
+		abort(e) {
+			closed = true
+			pullResolve?.()
+			readableController.error(e)
+		}
+	}, { highWaterMark: 1 })
+
+	return { readable, writable }
+}
+
 export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
 
 export type DeepValueUnion<T> =
-  T extends readonly (infer E)[]
+	T extends readonly (infer E)[]
 		? DeepValueUnion<E>
 		: T extends Record<string, unknown>
 			? { [K in keyof T]: DeepValueUnion<T[K]> }[keyof T]
