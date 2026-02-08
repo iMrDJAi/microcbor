@@ -124,7 +124,8 @@ export function createTransformWithBackpressure<I, O>(
 	}, { highWaterMark: 1 })
 
 	const writable = new WritableStream<I>({
-		write(chunk) {
+		async write(chunk) {
+			await new Promise(res => setImmediate(res)) // yield
 			return transform(chunk, enqueue)
 		},
 		async close() {
